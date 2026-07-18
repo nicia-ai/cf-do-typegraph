@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TypeGraph on Durable Objects — a graph database per tenant</title>
+    <meta
+      name="description"
+      content="One Cloudflare Durable Object class + TypeGraph = an isolated, SQLite-backed graph database per tenant, addressed by name. No provisioning."
+    />
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="glyph" aria-hidden="true"></span>
+        <b>TypeGraph</b>
+        <span class="sep">on</span>
+        <span>Durable Objects</span>
+      </div>
+      <nav>
+        <a href="https://typegraph.dev">typegraph.dev</a>
+        <a href="https://github.com/nicia-ai/typegraph">GitHub</a>
+      </nav>
+    </header>
+
+    <main class="wrap">
+      <section class="hero">
+        <p class="eyebrow">One Durable Object class</p>
+        <h1>A graph database<br /><span class="glow">per tenant.</span></h1>
+        <p class="lede">
+          Every tenant below is its own isolated, SQLite-backed graph database
+          running at the edge — <b>addressed by name</b>, not provisioned. No
+          signups, no keys, no <span class="mono">WHERE tenant_id</span>.
+        </p>
+
+        <div class="resolver" id="resolver" aria-hidden="true">
+          <span class="tok-dim">env.GRAPH_DO.</span
+          ><span class="tok-fn">idFromName</span><span class="tok-dim">(</span
+          ><span class="tok-str">"authz:</span
+          ><input
+            id="resolver-name"
+            value="acme"
+            spellcheck="false"
+            aria-label="tenant name"
+          /><span class="tok-str">"</span><span class="tok-dim">)</span>
+          <span class="arrow">→</span>
+          <span class="result">
+            <span class="dot dot--live"></span>
+            <span id="resolver-result">graph online</span>
+          </span>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Three examples, three tenancy axes</h2>
+          <span class="eyebrow">GET /api/examples</span>
+        </div>
+        <div class="examples" id="examples">
+          <!-- cards injected by js/index.js -->
+        </div>
+      </section>
+
+      <section class="curl">
+        <div class="section-head">
+          <h2>Or drive it from the shell</h2>
+          <span class="eyebrow">same-origin · no auth</span>
+        </div>
+        <div class="curl-grid" id="curl"><!-- snippets injected --></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span
+        >One DO class. SQLite at the edge. Tenancy is a naming decision.</span
+      >
+      <span>
+        <a href="https://typegraph.dev">typegraph.dev</a> ·
+        <a href="https://github.com/nicia-ai/typegraph"
+          >github.com/nicia-ai/typegraph</a
+        >
+      </span>
+    </footer>
+
+    <script type="module" src="/js/index.js"></script>
+  </body>
+</html>

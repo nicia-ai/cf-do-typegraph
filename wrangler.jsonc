@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "typegraph-do-demo",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "logs": { "enabled": true } },
+  "dev": { "port": 8787 },
+  // Local requests work without configuration. A deployed Worker keeps its API
+  // disabled until its operator has added access control and rate limiting and
+  // then deliberately changes this value to "true".
+  "vars": { "ALLOW_PUBLIC_API": "false" },
+  // Landing page + graph viz. Requests that match a file are served
+  // statically; everything else (all /api/* paths) hits the Worker.
+  "assets": { "directory": "./public" },
+  // One DO class for every example and every tenant. A tenant's whole
+  // graph database is the instance `idFromName("<example>:<tenant>")` —
+  // tenancy is a naming decision, not an infrastructure project.
+  "durable_objects": {
+    "bindings": [{ "name": "GRAPH_DO", "class_name": "GraphDO" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GraphDO"] }],
+  // Workers AI is strictly opt-in: it always proxies to your real
+  // Cloudflare account and bills usage, even under `wrangler dev`.
+  // Uncomment to enable AI entity extraction in the agent-memory
+  // example and semantic search in the notes example.
+  // "ai": { "binding": "AI" },
+}

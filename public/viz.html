@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Graph — TypeGraph on Durable Objects</title>
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body class="viz-body">
+    <header class="viz-head">
+      <a class="back" href="/">← all examples</a>
+      <span class="badge" id="badge">example</span>
+      <div class="tenant-switch">
+        <span>tenant</span>
+        <input
+          id="tenant-input"
+          spellcheck="false"
+          aria-label="switch tenant"
+        />
+      </div>
+      <div class="metrics">
+        <span><b id="node-count">0</b> nodes</span>
+        <span><b id="edge-count">0</b> edges</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="conn">
+        <span class="dot dot--off" id="conn-dot"></span>
+        <span id="conn-label">connecting…</span>
+      </div>
+    </header>
+
+    <div class="controls" id="controls"><!-- per-example strip --></div>
+
+    <div class="stage">
+      <canvas id="graph"></canvas>
+
+      <div class="panel legend" id="legend" hidden>
+        <div class="eyebrow">Node kinds</div>
+        <ul></ul>
+      </div>
+
+      <div class="panel verdict" id="verdict">
+        <div class="eyebrow">Permission check</div>
+        <div class="call"></div>
+        <div class="why"></div>
+      </div>
+
+      <div class="panel results" id="results">
+        <header><span>Search</span><span class="count"></span></header>
+        <div class="list"></div>
+      </div>
+
+      <div class="empty" id="empty">
+        <div class="ring">∅</div>
+        <h2>This graph is empty</h2>
+        <p>
+          Nothing has been written to this tenant yet. Seed it to see the graph
+          come alive.
+        </p>
+        <button class="btn btn--accent" id="seed-btn">Seed this tenant</button>
+      </div>
+    </div>
+
+    <div class="tooltip" id="tooltip">
+      <div class="k"></div>
+      <div class="l"></div>
+    </div>
+
+    <script type="module" src="/js/viz.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+node_modules
+.claude
+.wrangler
+.dev.vars
+.env
+.env.*
+dist
+worker-configuration.d.ts
+*.log
+.DS_Store
+*.sqlite
+*.sqlite-journal
+.idea/
+.vscode/
+*.swp
+.gstack/

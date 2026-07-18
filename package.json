@@ -1,0 +1,70 @@
+{
+  "name": "@nicia-ai/typegraph-do-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo: TypeGraph turns one Cloudflare Durable Object class into a graph database per tenant — agent memory, Zanzibar-lite authz, and a personal knowledge graph, each with its own tenancy axis.",
+  "license": "MIT",
+  "author": {
+    "name": "Nicia AI, Inc.",
+    "email": "paul@nicia.ai"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nicia-ai/cf-do-typegraph.git"
+  },
+  "homepage": "https://github.com/nicia-ai/cf-do-typegraph#readme",
+  "bugs": "https://github.com/nicia-ai/cf-do-typegraph/issues",
+  "type": "module",
+  "keywords": [
+    "typegraph",
+    "graph-database",
+    "cloudflare-workers",
+    "durable-objects",
+    "multitenancy",
+    "knowledge-graph"
+  ],
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "wrangler types",
+    "types": "wrangler types",
+    "typecheck": "wrangler types && tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
+  },
+  "dependencies": {
+    "@nicia-ai/typegraph": "^0.40.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.31",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.7",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
+    "@vitest/eslint-plugin": "^1.6.23",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-functional": "^10.0.0",
+    "eslint-plugin-import-x": "^4.17.1",
+    "globals": "^17.7.0",
+    "miniflare": "^4.20260721.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.113.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "workerd",
+      "esbuild"
+    ]
+  }
+}
