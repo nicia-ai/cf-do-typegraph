@@ -190,7 +190,7 @@ See [SECURITY.md](./SECURITY.md) for private vulnerability reporting.
 | `pnpm check`  | typecheck + lint + format check + test (the single CI gate) |
 | `pnpm deploy` | Deploy the site; public API remains disabled by default     |
 
-Tests run under [`@cloudflare/vitest-pool-workers`](https://developers.cloudflare.com/workers/testing/vitest-integration/) against **real Durable Objects** — no mocks, no fakes. Each test seeds a freshly-named tenant, so isolation is exercised on every run.
+Tests run under [`@cloudflare/vitest-plugin`](https://developers.cloudflare.com/workers/testing/vitest-integration/) against **real Durable Objects** — no mocks, no fakes. Each test seeds a freshly-named tenant, so isolation is exercised on every run.
 
 ## Links
 
