@@ -8,6 +8,7 @@ import type { GraphChangeEvent } from "@/examples/types";
 import { GRAPH_EXAMPLE_HEADER, GRAPH_TENANT_HEADER } from "@/shared/routing";
 
 const IDENTITY_KEY = "graph-do:identity";
+const WEBSOCKET_NORMAL_CLOSURE = 1000;
 
 type Identity = Readonly<{ example: ExampleName; tenant: string }>;
 
@@ -53,8 +54,10 @@ export class GraphDO extends DurableObject<Env> {
     if (message === "ping") ws.send("pong");
   }
 
-  override webSocketClose(): void {
-    // Hibernation API tracks sockets; nothing to clean up.
+  override webSocketClose(ws: WebSocket): void {
+    // Complete the closing handshake. Without the reply a browser waits out
+    // its close timeout before it reports the socket closed.
+    ws.close(WEBSOCKET_NORMAL_CLOSURE, "closing");
   }
 
   override webSocketError(): void {

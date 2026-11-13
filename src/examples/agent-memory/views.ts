@@ -16,6 +16,7 @@ import type {
 import {
   collectSnapshot,
   edgeSource,
+  nameOrKind,
   nodeSource,
   type EdgeSource,
   type NodeSource,
@@ -34,12 +35,6 @@ export type TimelineEntry = Readonly<{
   text: string;
   recordedAt: string | null;
 }>;
-
-/** Entities read as their name; a missing name falls back to the kind. */
-function entityName(node: Readonly<{ kind: string }>): string {
-  const name = (node as Readonly<Record<string, unknown>>).name;
-  return typeof name === "string" ? name : node.kind;
-}
 
 /**
  * The current graph. Once the schema has evolved, the runtime-added
@@ -64,7 +59,7 @@ export function liveSnapshot(store: AgentMemoryStore): Promise<GraphSnapshot> {
 
   if (store.registry.hasNodeType(ORGANIZATION_KIND)) {
     nodeSources.push(
-      nodeSource(store.getNodeCollectionOrThrow(ORGANIZATION_KIND), entityName),
+      nodeSource(store.getNodeCollectionOrThrow(ORGANIZATION_KIND), nameOrKind),
     );
     edgeSources.push(edgeSource(store.getEdgeCollectionOrThrow(WORKS_AT_KIND)));
   }
@@ -95,9 +90,9 @@ export async function recordedSnapshot(
         view.nodes.Message,
         (message) => `${message.role} #${message.index}`,
       ),
-      reconstructNodes(store.nodes.Person, view.nodes.Person, entityName),
-      reconstructNodes(store.nodes.Topic, view.nodes.Topic, entityName),
-      reconstructNodes(store.nodes.Place, view.nodes.Place, entityName),
+      reconstructNodes(store.nodes.Person, view.nodes.Person, nameOrKind),
+      reconstructNodes(store.nodes.Topic, view.nodes.Topic, nameOrKind),
+      reconstructNodes(store.nodes.Place, view.nodes.Place, nameOrKind),
     ]),
     Promise.all([
       reconstructEdges(store.edges.mentions, view.edges.mentions),

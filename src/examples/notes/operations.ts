@@ -55,6 +55,8 @@ export type PathResult = Readonly<{
   pathNodeIds: readonly string[];
 }>;
 
+const NO_PATH: PathResult = { found: false, depth: 0, pathNodeIds: [] };
+
 export type SemanticHit = Readonly<{
   id: string;
   title: string;
@@ -82,8 +84,10 @@ export function createNotesOperations(store: NotesStore, ai?: AiRunner) {
     if (slug === "") return { ok: false, error: EMPTY_SLUG_MESSAGE };
     const id = noteId(slug);
 
-    const existing = await store.nodes.Note.getById(asNodeId<typeof Note>(id));
+    // Embed first: it is the only network await, so nothing can interleave
+    // between reading whether the note exists and writing it.
     const embeddingVector = await embed(`${title}\n\n${body}`);
+    const existing = await store.nodes.Note.getById(asNodeId<typeof Note>(id));
     await store.nodes.Note.upsertById(
       id,
       embeddingVector === undefined
@@ -237,15 +241,13 @@ export function createNotesOperations(store: NotesStore, ai?: AiRunner) {
   ): Promise<PathResult> {
     const from = resolveNoteId(fromReference);
     const to = resolveNoteId(toReference);
-    if (from === undefined || to === undefined) {
-      return { found: false, depth: 0, pathNodeIds: [] };
-    }
+    if (from === undefined || to === undefined) return NO_PATH;
     const path = await store.algorithms.shortestPath(from, to, {
       edges: LINK_EDGES,
       direction: "both",
       maxHops: MAX_PATH_HOPS,
     });
-    if (path === undefined) return { found: false, depth: 0, pathNodeIds: [] };
+    if (path === undefined) return NO_PATH;
     return {
       found: true,
       depth: path.depth,

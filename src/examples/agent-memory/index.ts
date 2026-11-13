@@ -12,7 +12,7 @@ import type { ScriptStep } from "./script";
 import { liveSnapshot, recordedSnapshot, timeline } from "./views";
 
 const MAX_MESSAGE_LENGTH = 10_000;
-const MAX_RECORDED_INSTANT_LENGTH = 64;
+const MAX_RECORDED_INSTANT_LENGTH = 256;
 const messageSchema = z.object({
   text: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH),
 });
@@ -64,7 +64,9 @@ export const agentMemoryExample: ExampleModule = {
       }
       if (recorded.length > MAX_RECORDED_INSTANT_LENGTH) {
         return c.json(
-          { error: "`recorded` must be at most 64 characters" },
+          {
+            error: `\`recorded\` must be at most ${MAX_RECORDED_INSTANT_LENGTH} characters`,
+          },
           400,
         );
       }
@@ -73,7 +75,7 @@ export const agentMemoryExample: ExampleModule = {
         return c.json(await recordedSnapshot(store, instant));
       } catch {
         return c.json(
-          { error: "`recorded` must be a canonical UTC ISO-8601 instant" },
+          { error: "`recorded` must be a `recordedAt` value from /timeline" },
           400,
         );
       }

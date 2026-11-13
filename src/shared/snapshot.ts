@@ -12,6 +12,12 @@ type FindableEdge = Readonly<{
   toId: string;
 }>;
 
+/** Reads the `name` prop off a dynamically-typed node, falling back to its kind. */
+export function nameOrKind(node: Readonly<{ kind: string }>): string {
+  const name = (node as Readonly<Record<string, unknown>>).name;
+  return typeof name === "string" ? name : node.kind;
+}
+
 export type NodeSource = () => Promise<readonly SnapshotNode[]>;
 export type EdgeSource = () => Promise<readonly SnapshotEdge[]>;
 
