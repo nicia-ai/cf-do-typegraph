@@ -40,7 +40,6 @@ export class ForceGraph {
     this.ctx = canvas.getContext("2d");
     this.palette = options.palette ?? ["#8b7cff"];
     this.accent = options.accent ?? "#8b7cff";
-    this.onSelect = options.onSelect ?? (() => {});
     this.onHover = options.onHover ?? (() => {});
 
     this.nodes = new Map(); // id → { x, y, vx, vy, kind, label, pinned, born, dead }
@@ -53,8 +52,9 @@ export class ForceGraph {
     this.highlight = null; // Set<string> of node ids, or null for "show all"
     this.transform = { x: 0, y: 0, scale: 1 };
 
-    this.pointer = { x: 0, y: 0, inside: false };
-    this.drag = null; // { id, dx, dy } while dragging a node
+    // The one pointer gesture in progress, or null:
+    // { type: "drag", id, dx, dy } moves a node, { type: "pan", x, y } moves the view.
+    this.gesture = null;
 
     this.#resize();
     this.#bindEvents();
@@ -108,6 +108,14 @@ export class ForceGraph {
     this.reheat();
   }
 
+  // Drop everything at once, with no fade: the next snapshot is another graph.
+  clear() {
+    this.nodes.clear();
+    this.edges = [];
+    this.selectedId = null;
+    this.highlight = null;
+  }
+
   reheat() {
     this.alpha = REHEAT_ALPHA;
     this.start();
@@ -119,7 +127,6 @@ export class ForceGraph {
 
   select(id) {
     this.selectedId = id;
-    this.onSelect(id ? this.#publicNode(id) : null);
   }
 
   centerOn(id) {
@@ -141,7 +148,7 @@ export class ForceGraph {
       if (!this.running) return;
       this.#tick();
       this.#render();
-      if (this.alpha <= ALPHA_MIN && !this.drag && !this.#animating()) {
+      if (this.alpha <= ALPHA_MIN && !this.gesture && !this.#animating()) {
         this.running = false; // settle: stop integrating, keep the last frame
         return;
       }
@@ -354,39 +361,42 @@ export class ForceGraph {
       this.rect = canvas.getBoundingClientRect(); // gesture may follow a scroll
       const world = this.#toWorld(event.clientX, event.clientY);
       const hit = this.#nodeAt(world.x, world.y);
+      // Capture for both gestures, so a release outside the canvas still ends it.
+      canvas.setPointerCapture(event.pointerId);
       if (hit) {
-        canvas.setPointerCapture(event.pointerId);
-        this.drag = {
+        this.gesture = {
+          type: "drag",
           id: hit.id,
           dx: hit.node.x - world.x,
           dy: hit.node.y - world.y,
         };
         hit.node.pinned = true;
         this.select(hit.id);
-        this.start();
       } else {
-        this.pan = { x: event.clientX, y: event.clientY };
+        this.gesture = { type: "pan", x: event.clientX, y: event.clientY };
         this.select(null);
       }
+      this.start();
     });
 
     canvas.addEventListener("pointermove", (event) => {
       const world = this.#toWorld(event.clientX, event.clientY);
-      if (this.drag) {
-        const node = this.nodes.get(this.drag.id);
+      const gesture = this.gesture;
+      if (gesture?.type === "drag") {
+        const node = this.nodes.get(gesture.id);
         if (node) {
-          node.x = world.x + this.drag.dx;
-          node.y = world.y + this.drag.dy;
+          node.x = world.x + gesture.dx;
+          node.y = world.y + gesture.dy;
           node.vx = 0;
           node.vy = 0;
         }
         return;
       }
-      if (this.pan) {
-        this.transform.x += event.clientX - this.pan.x;
-        this.transform.y += event.clientY - this.pan.y;
-        this.pan = { x: event.clientX, y: event.clientY };
-        this.start();
+      if (gesture?.type === "pan") {
+        this.transform.x += event.clientX - gesture.x;
+        this.transform.y += event.clientY - gesture.y;
+        gesture.x = event.clientX;
+        gesture.y = event.clientY;
         return;
       }
       const hit = this.#nodeAt(world.x, world.y);
@@ -398,19 +408,13 @@ export class ForceGraph {
       );
     });
 
-    const endDrag = (event) => {
-      if (this.drag) {
-        try {
-          canvas.releasePointerCapture(event.pointerId);
-        } catch {
-          // Capture may already be gone; nothing to release.
-        }
-      }
-      this.drag = null;
-      this.pan = null;
+    // The browser releases the pointer capture itself on pointerup and
+    // pointercancel.
+    const endGesture = () => {
+      this.gesture = null;
     };
-    canvas.addEventListener("pointerup", endDrag);
-    canvas.addEventListener("pointercancel", endDrag);
+    canvas.addEventListener("pointerup", endGesture);
+    canvas.addEventListener("pointercancel", endGesture);
     canvas.addEventListener("pointerleave", () => this.onHover(null, 0, 0));
 
     canvas.addEventListener(
@@ -445,8 +449,3 @@ export class ForceGraph {
     this.canvas.height = Math.max(1, Math.round(this.rect.height * this.dpr));
   }
 }
-
-// The node palette + accent live in the shared per-example config; the
-// ForceGraph engine reads them via its constructor options. Re-exported here
-// so callers can grab a theme alongside the renderer.
-export { configFor as themeFor } from "./examples-config.js";

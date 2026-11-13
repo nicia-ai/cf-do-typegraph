@@ -1,5 +1,7 @@
 import type { Store } from "@nicia-ai/typegraph";
 
+import { nameOrKind } from "@/shared/snapshot";
+
 import {
   type authzGraph,
   isResourceKind,
@@ -65,10 +67,7 @@ export async function check(
   relation: Relation,
   target: ResolvedNode,
 ): Promise<CheckResult> {
-  const grantKinds = store.registry.expandImplyingEdges(
-    relation,
-  ) as readonly Relation[];
-  const edges: readonly AuthzEdgeKind[] = [MEMBER_OF, ...grantKinds, PARENT_OF];
+  const { grantKinds, edges } = traversalAlphabet(store, relation);
 
   const path = await store.algorithms.shortestPath(subject.id, target.id, {
     edges,
@@ -95,6 +94,23 @@ export async function check(
     pathNodeIds: witness.nodeIds,
     pathEdgeKinds: witness.edgeKinds,
   };
+}
+
+/**
+ * The edge kinds one check may follow: membership, every grant that implies
+ * `relation` (read from the ontology), and folder inheritance.
+ */
+function traversalAlphabet(
+  store: AuthzStore,
+  relation: Relation,
+): Readonly<{
+  grantKinds: readonly Relation[];
+  edges: readonly AuthzEdgeKind[];
+}> {
+  const grantKinds = store.registry.expandImplyingEdges(
+    relation,
+  ) as readonly Relation[];
+  return { grantKinds, edges: [MEMBER_OF, ...grantKinds, PARENT_OF] };
 }
 
 type PathWitness = Readonly<{
@@ -203,9 +219,7 @@ export async function loadNode(
   const kind = KIND_BY_PREFIX[prefix];
   if (kind === undefined) return undefined;
   const node = await store.getNodeCollectionOrThrow(kind).getById(id);
-  return node === undefined
-    ? undefined
-    : { id: node.id, kind: node.kind, label: nodeLabel(node) };
+  return node === undefined ? undefined : toResolvedNode(node);
 }
 
 /**
@@ -229,23 +243,15 @@ export async function loadNodes(
     [...idsByKind].map(async ([kind, ids]) => {
       const nodes = await store.getNodeCollectionOrThrow(kind).getByIds(ids);
       for (const node of nodes) {
-        if (node !== undefined) {
-          resolved.set(node.id, {
-            id: node.id,
-            kind: node.kind,
-            label: nodeLabel(node),
-          });
-        }
+        if (node !== undefined) resolved.set(node.id, toResolvedNode(node));
       }
     }),
   );
   return resolved;
 }
 
-/** Read the `name` prop off a dynamically-typed node, falling back to its kind. */
-function nodeLabel(node: Readonly<{ kind: string }>): string {
-  const name = (node as Readonly<Record<string, unknown>>).name;
-  return typeof name === "string" ? name : node.kind;
+function toResolvedNode(node: GraphNodeRef): ResolvedNode {
+  return { id: node.id, kind: node.kind, label: nameOrKind(node) };
 }
 
 /**
@@ -276,10 +282,7 @@ async function reachableResources(
   subject: ResolvedNode,
   relation: Relation,
 ): Promise<readonly ResolvedNode[]> {
-  const grantKinds = store.registry.expandImplyingEdges(
-    relation,
-  ) as readonly Relation[];
-  const edges: readonly AuthzEdgeKind[] = [MEMBER_OF, ...grantKinds, PARENT_OF];
+  const { edges } = traversalAlphabet(store, relation);
   const reached = await store.algorithms.reachable(subject.id, {
     edges,
     direction: "out",

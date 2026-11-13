@@ -114,6 +114,22 @@ describe("agent-memory replay", () => {
     expect(hasNode(past, "person:ada")).toBe(true);
   });
 
+  it("rejects a recorded value that is not a timeline instant", async () => {
+    const tenant = "bad-recorded";
+    await seedMemory(tenant);
+
+    for (const recorded of ["yesterday", "x".repeat(300)]) {
+      const response = await SELF.fetch(
+        apiUrl(
+          "agent-memory",
+          tenant,
+          `/graph?recorded=${encodeURIComponent(recorded)}`,
+        ),
+      );
+      expect(response.status).toBe(400);
+    }
+  });
+
   it("evolves the schema mid-conversation to add Organization", async () => {
     const tenant = "evolution";
     // Replay the seven messages before the partnership is announced.

@@ -3,24 +3,44 @@
 // control strip (temporal replay, authz checks, notes search + path).
 
 import { api, tenantBase, toast, escapeHtml, renderSnippet } from "./api.js";
-import { ForceGraph, themeFor } from "./graph.js";
-import { DEFAULT_EXAMPLE } from "./examples-config.js";
+import { ForceGraph } from "./graph.js";
+import { configFor, DEFAULT_EXAMPLE } from "./examples-config.js";
 
 const PLAY_INTERVAL_MS = 1500;
 const PING_INTERVAL_MS = 30000;
 const RECONNECT_MS = 2000;
 
+// What the canvas shows: the live graph, or the graph pinned at a recorded
+// instant from the timeline.
+const LIVE_VIEW = Object.freeze({ mode: "live" });
+const historyView = (recordedAt) => ({ mode: "history", recordedAt });
+
+// The header's connection indicator, by socket state. A pinned history view
+// overrides it, because pushes are ignored while one is shown.
+const LINK_INDICATOR = {
+  connecting: ["dot--off", "connecting…"],
+  open: ["dot--live", "live"],
+  closed: ["dot--off", "offline"],
+};
+const HISTORY_INDICATOR = ["dot--off", "history"];
+
 const params = new URLSearchParams(location.search);
 const example = params.get("example") ?? DEFAULT_EXAMPLE;
+
+// Everything that changes while the page is open. `view` and `link` are
+// independent, and every indicator derives from them in renderConnection().
 const state = {
   tenant: params.get("tenant") ?? "demo",
-  viewingHistory: false, // true while a temporal snapshot is pinned
-  socket: null,
+  view: LIVE_VIEW,
+  link: "connecting", // "connecting" | "open" | "closed"
+  socket: null, // the current socket; events from any other socket are stale
   pingTimer: null,
-  playTimer: null,
+  reconnectTimer: null,
+  graphRequest: 0, // the newest loadGraph() call; older responses are dropped
+  disposeControls: () => {},
 };
 
-const theme = themeFor(example);
+const theme = configFor(example);
 document.body.dataset.example = example;
 
 const el = {
@@ -47,7 +67,6 @@ document.title = `${example}:${state.tenant} — TypeGraph`;
 const graph = new ForceGraph(el.canvas, {
   palette: theme.palette,
   accent: theme.accent,
-  onSelect: () => {},
   onHover: showTooltip,
 });
 graph.start();
@@ -72,7 +91,7 @@ function updateCounts() {
   const { nodes, edges } = graph.counts();
   el.nodeCount.textContent = nodes;
   el.edgeCount.textContent = edges;
-  el.empty.classList.toggle("is-on", nodes === 0 && !state.viewingHistory);
+  el.empty.classList.toggle("is-on", nodes === 0 && state.view.mode === "live");
 }
 
 function renderLegend() {
@@ -88,68 +107,98 @@ function renderLegend() {
   el.legend.hidden = kinds.size === 0;
 }
 
-async function loadGraph(query = "") {
+// Loads the graph for the current tenant and view. Only the newest call may
+// draw: a slower response for an earlier tenant or view is dropped.
+async function loadGraph() {
+  const request = ++state.graphRequest;
+  const query =
+    state.view.mode === "history"
+      ? `?recorded=${encodeURIComponent(state.view.recordedAt)}`
+      : "";
   try {
     const snapshot = await api.graph(example, state.tenant, query);
+    if (request !== state.graphRequest) return;
     graph.setData(snapshot);
     updateCounts();
     renderLegend();
-    return snapshot;
   } catch (err) {
+    if (request !== state.graphRequest) return;
     toast(`Failed to load graph: ${err.message}`, "error");
-    return null;
   }
+}
+
+function setView(view) {
+  state.view = view;
+  renderConnection();
+  return loadGraph();
 }
 
 // WebSocket -------------------------------------------------------------
 
-function setConnection(status) {
-  const map = {
-    live: ["dot--live", "live"],
-    connecting: ["dot--off", "connecting…"],
-    offline: ["dot--off", "offline"],
-    paused: ["dot--off", "history"],
-  };
-  const [cls, label] = map[status];
+function renderConnection() {
+  const [cls, label] =
+    state.view.mode === "history"
+      ? HISTORY_INDICATOR
+      : LINK_INDICATOR[state.link];
   el.connDot.className = `dot ${cls}`;
   el.connLabel.textContent = label;
 }
 
-function connectWs() {
-  if (state.socket) {
-    state.socket.onclose = null;
-    state.socket.close();
-  }
+function setLink(link) {
+  state.link = link;
+  renderConnection();
+}
+
+function disconnectWs() {
   clearInterval(state.pingTimer);
+  clearTimeout(state.reconnectTimer);
+  const socket = state.socket;
+  state.socket = null;
+  socket?.close();
+}
+
+// Opens the socket for the current tenant, replacing any earlier one. A
+// replaced socket still fires its events, so each handler first checks that
+// its socket is the current one.
+function connectWs({ resync = false } = {}) {
+  disconnectWs();
 
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   const url = `${scheme}://${location.host}${tenantBase(example, state.tenant)}/ws`;
-  setConnection("connecting");
   const socket = new WebSocket(url);
+  const isCurrent = () => state.socket === socket;
   state.socket = socket;
+  setLink("connecting");
 
   socket.addEventListener("open", () => {
-    setConnection(state.viewingHistory ? "paused" : "live");
-    state.pingTimer = setInterval(() => {
-      if (socket.readyState === WebSocket.OPEN) socket.send("ping");
-    }, PING_INTERVAL_MS);
+    if (!isCurrent()) return;
+    setLink("open");
+    state.pingTimer = setInterval(() => socket.send("ping"), PING_INTERVAL_MS);
+    // Pushes sent while the socket was down are gone; catch up once.
+    if (resync && state.view.mode === "live") loadGraph();
   });
 
   socket.addEventListener("message", (event) => {
-    if (event.data === "pong") return;
+    if (!isCurrent() || event.data === "pong") return;
     let payload;
     try {
       payload = JSON.parse(event.data);
     } catch {
       return;
     }
-    if (payload.type === "graph-changed" && !state.viewingHistory) loadGraph();
+    if (payload.type === "graph-changed" && state.view.mode === "live") {
+      loadGraph();
+    }
   });
 
   socket.addEventListener("close", () => {
+    if (!isCurrent()) return;
     clearInterval(state.pingTimer);
-    setConnection("offline");
-    setTimeout(connectWs, RECONNECT_MS);
+    setLink("closed");
+    state.reconnectTimer = setTimeout(
+      () => connectWs({ resync: true }),
+      RECONNECT_MS,
+    );
   });
 
   socket.addEventListener("error", () => socket.close());
@@ -160,22 +209,16 @@ function connectWs() {
 function switchTenant(next) {
   const tenant = next.trim();
   if (!tenant || tenant === state.tenant) return;
-  // Tear down the old tenant's context: stop any agent-memory Play loop so it
-  // doesn't keep POSTing /replay/step against the previous tenant.
-  clearInterval(state.playTimer);
-  state.playTimer = null;
   state.tenant = tenant;
-  state.viewingHistory = false;
-  clearHighlight();
+  state.view = LIVE_VIEW;
   const url = new URL(location.href);
   url.searchParams.set("tenant", tenant);
   history.replaceState(null, "", url);
   document.title = `${example}:${tenant} — TypeGraph`;
-  graph.nodes.clear();
-  graph.edges = [];
+  graph.clear();
+  buildControls();
   loadGraph();
   connectWs();
-  buildControls();
 }
 
 el.tenantInput.addEventListener("change", () =>
@@ -218,8 +261,9 @@ function control(html) {
   return t.content.firstElementChild;
 }
 
-// Each example owns a self-contained control strip; dispatch by name.
-// Unknown examples get no strip (same as before), matching the theme's own
+// Each example owns a self-contained control strip; dispatch by name. A
+// builder may return a dispose function, called before the strip is rebuilt
+// for another tenant. Unknown examples get no strip, matching the theme's own
 // silent fallback.
 const CONTROL_BUILDERS = {
   "agent-memory": buildMemoryControls,
@@ -228,10 +272,11 @@ const CONTROL_BUILDERS = {
 };
 
 function buildControls() {
+  state.disposeControls();
   el.controls.innerHTML = "";
   el.results.classList.remove("is-on");
   el.verdict.classList.remove("is-on");
-  CONTROL_BUILDERS[example]?.();
+  state.disposeControls = CONTROL_BUILDERS[example]?.() ?? (() => {});
 }
 
 // agent-memory: step through a scripted conversation, then scrub time.
@@ -260,7 +305,27 @@ function buildMemoryControls() {
   const caption = strip.querySelector("[data-caption]");
 
   let steps = [];
-  let done = false;
+  // The replay is "idle", "playing" (advancing on a timer) or "complete".
+  // `stepping` is true while one step request is in flight, in any of them.
+  let replay = "idle";
+  let stepping = false;
+  let playTimer = null;
+  let disposed = false;
+
+  function render() {
+    stepBtn.disabled = stepping || replay === "complete";
+    stepBtn.textContent = replay === "complete" ? "replay complete" : "Step ▸";
+    playBtn.disabled = replay === "complete";
+    playBtn.textContent = replay === "playing" ? "Pause" : "Play";
+  }
+
+  function setReplay(next) {
+    replay = next;
+    clearTimeout(playTimer);
+    if (replay === "playing")
+      playTimer = setTimeout(playNext, PLAY_INTERVAL_MS);
+    render();
+  }
 
   async function refreshTimeline() {
     try {
@@ -269,84 +334,79 @@ function buildMemoryControls() {
     } catch {
       steps = [];
     }
-    if (steps.length > 0) {
-      timelineGroup.hidden = false;
-      slider.max = String(steps.length);
-      if (!state.viewingHistory) slider.value = slider.max;
-    }
+    if (disposed || steps.length === 0) return;
+    timelineGroup.hidden = false;
+    slider.max = String(steps.length);
+    if (state.view.mode === "live") slider.value = slider.max;
   }
 
+  // Applies one message and shows the live graph. A step always returns the
+  // view to live, so the slider, caption and canvas cannot disagree.
   async function step() {
-    stepBtn.disabled = true;
+    if (stepping || replay === "complete") return;
+    stepping = true;
+    render();
     try {
       const res = await api.post(example, state.tenant, "/replay/step", {});
+      if (disposed) return;
       progress.textContent = `message ${res.index}/${res.total}`;
-      done = res.done;
-      await loadGraph();
+      caption.textContent = "live";
+      await setView(LIVE_VIEW);
       await refreshTimeline();
-      slider.value = slider.max;
-      if (done) {
-        stepBtn.disabled = true;
-        stepBtn.textContent = "replay complete";
-        stopPlay();
-      } else {
-        stepBtn.disabled = false;
-      }
+      if (res.done) setReplay("complete");
     } catch (err) {
+      if (disposed) return;
       toast(`Replay step failed: ${err.message}`, "error");
-      stepBtn.disabled = false;
+      if (replay === "playing") setReplay("idle");
+    } finally {
+      stepping = false;
+      if (!disposed) render();
     }
   }
 
-  function stopPlay() {
-    clearInterval(state.playTimer);
-    state.playTimer = null;
-    playBtn.textContent = "Play";
+  // Each tick waits for its step before scheduling the next, so a slow
+  // response never overlaps the following one.
+  async function playNext() {
+    await step();
+    if (!disposed && replay === "playing") setReplay("playing");
   }
 
   playBtn.addEventListener("click", () => {
-    if (state.playTimer) {
-      stopPlay();
+    if (replay === "playing") {
+      setReplay("idle");
       return;
     }
-    playBtn.textContent = "Pause";
+    setReplay("playing");
     step();
-    state.playTimer = setInterval(() => {
-      if (done) stopPlay();
-      else step();
-    }, PLAY_INTERVAL_MS);
   });
 
   stepBtn.addEventListener("click", step);
 
-  slider.addEventListener("input", async () => {
-    const idx = Number(slider.value);
-    if (idx >= steps.length) {
-      // Back to the live head: resume WS-driven updates.
-      state.viewingHistory = false;
+  slider.addEventListener("input", () => {
+    const index = Number(slider.value);
+    if (index >= steps.length) {
       caption.textContent = "live";
-      setConnection(
-        state.socket?.readyState === WebSocket.OPEN ? "live" : "offline",
-      );
-      await loadGraph();
-      renderLegend();
+      setView(LIVE_VIEW);
       return;
     }
     // A step may lack a recorded instant (the server skips the stamp when
     // recordedNow() is undefined). Snap back to the nearest earlier step that
-    // has one; if none exists yet, stay live rather than querying ?recorded=null.
-    let snap = idx;
-    while (snap >= 0 && steps[snap]?.recordedAt == null) snap -= 1;
-    if (snap < 0) return;
-    const at = steps[snap];
-    state.viewingHistory = true;
-    setConnection("paused");
-    caption.textContent = `msg ${at.index} · ${truncate(at.text, 42)}`;
-    await loadGraph(`?recorded=${encodeURIComponent(at.recordedAt)}`);
-    renderLegend();
+    // has one; if none exists yet, keep the current view.
+    const pinned = steps
+      .slice(0, index + 1)
+      .findLast((entry) => entry.recordedAt != null);
+    if (pinned === undefined) return;
+    caption.textContent = `msg ${pinned.index} · ${truncate(pinned.text, 42)}`;
+    setView(historyView(pinned.recordedAt));
   });
 
+  render();
   refreshTimeline();
+
+  return () => {
+    disposed = true;
+    clearTimeout(playTimer);
+  };
 }
 
 // authz: ask a reachability question, show verdict + witness path.
